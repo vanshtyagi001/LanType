@@ -1,0 +1,65 @@
+;
+; LANTypeVhid.inf
+; LANType Virtual HID Keyboard Driver INF for Windows 10/11 x64
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Keyboard
+ClassGuid   = {4D36E96B-E325-11CE-BFC1-08002BE10318}
+Provider    = %ManufacturerName%
+CatalogFile = LANTypeVhid.cat
+DriverVer   = 10/27/2026,1.0.0.1
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12 ; %SystemRoot%\System32\drivers
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+LANTypeVhid.sys = 1,,
+
+; ================= Class section =====================
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+%LANTypeVhid.DeviceDesc% = LANTypeVhid_Device, root\LANTypeVhidDevice
+
+; ================= Install section ===================
+
+[LANTypeVhid_Device.NT]
+CopyFiles = Drivers_Dir
+
+[Drivers_Dir]
+LANTypeVhid.sys
+
+; ================= Service installation =============
+
+[LANTypeVhid_Device.NT.Services]
+AddService = LANTypeVhid,%SPSVCINST_ASSOCSERVICE%,LANTypeVhid_Service_Inst
+
+[LANTypeVhid_Service_Inst]
+DisplayName    = %LANTypeVhid.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\LANTypeVhid.sys
+
+; ================= WDF coinstaller section ===========
+
+[LANTypeVhid_Device.NT.Wdf]
+KmdfService = LANTypeVhid, LANTypeVhid_wdfsect
+
+[LANTypeVhid_wdfsect]
+KmdfLibraryVersion = 1.15
+
+[Strings]
+SPSVCINST_ASSOCSERVICE = 0x00000002
+ManufacturerName       = "LANType Project"
+DiskName               = "LANType Virtual Keyboard Installation Disk"
+LANTypeVhid.DeviceDesc = "LANType Virtual HID Keyboard Device"
+LANTypeVhid.SVCDESC    = "LANType Virtual HID Keyboard Driver Service"
