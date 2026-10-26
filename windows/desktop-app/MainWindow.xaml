@@ -120,7 +120,9 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="⌨️" FontSize="26" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <Border CornerRadius="8" Width="36" Height="36" Margin="0,0,12,0" ClipToBounds="True">
+                        <Image Source="Assets/logo.png" Stretch="UniformToFill" />
+                    </Border>
                     <StackPanel>
                         <TextBlock Text="LANType" FontSize="22" FontWeight="Bold" Foreground="#F8FAFC" />
                         <TextBlock Text="System-Wide Virtual HID Keyboard Typing System" FontSize="12" Foreground="#94A3B8" />
