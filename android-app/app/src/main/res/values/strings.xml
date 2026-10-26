@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">LANType</string>
+    <string name="connection_status_disconnected">Disconnected</string>
+    <string name="connection_status_connecting">Connecting...</string>
+    <string name="connection_status_connected">Connected</string>
+    <string name="connection_status_paired">Paired &amp; Ready</string>
+    <string name="connection_status_typing">Typing...</string>
+    <string name="connection_status_paused">Paused</string>
+    <string name="connection_status_completed">Completed</string>
+    <string name="connection_status_stopped">Stopped</string>
+    <string name="connection_status_error">Error</string>
+</resources>
