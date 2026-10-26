@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class MainViewModel(
+class MainViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: LANTypeRepository = LANTypeRepository(),
     private val settingsRepository: SettingsRepository = SettingsRepository(application)
