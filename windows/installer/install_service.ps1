@@ -80,6 +80,11 @@ Write-Host "[*] Registering LANTypeService in Windows Service Control Manager...
 sc.exe create "LANTypeService" binPath= "`"$serviceExe`"" start= $StartupType DisplayName= "LANType Background Service" depend= "Tcpip"
 sc.exe description "LANTypeService" "LANType background typing engine and authenticated WebSocket server for LAN keyboard emulation."
 
+# 6b. Add Windows Firewall Inbound Rules
+Write-Host "[*] Configuring Windows Firewall rules for TCP 52443 and UDP 52442..."
+netsh advfirewall firewall add rule name="LANType WebSocket Port" dir=in action=allow protocol=TCP localport=52443 profile=any | Out-Null
+netsh advfirewall firewall add rule name="LANType Discovery Port" dir=in action=allow protocol=UDP localport=52442 profile=any | Out-Null
+
 # 7. Start the Service
 Write-Host "[*] Starting LANTypeService..."
 Start-Service -Name "LANTypeService"

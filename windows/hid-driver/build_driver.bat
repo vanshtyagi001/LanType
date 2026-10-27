@@ -26,7 +26,7 @@ echo [INFO] Found MSBuild at: "%MSBUILD%"
 set "CONFIG=Release"
 if "%1"=="Debug" set "CONFIG=Debug"
 
-echo [INFO] Building LANTypeVhid.vcxproj in %CONFIG%|x64 mode...
+echo [INFO] Building LANTypeVhid.vcxproj in %CONFIG%^|x64 mode...
 "%MSBUILD%" "%~dp0LANTypeVhid.vcxproj" /p:Configuration=%CONFIG% /p:Platform=x64 /t:Rebuild
 
 if %ERRORLEVEL% equ 0 (

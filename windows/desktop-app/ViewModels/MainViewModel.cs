@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -12,10 +15,11 @@ public class MainViewModel : INotifyPropertyChanged
 {
     private readonly ServiceApiClient _apiClient;
     private readonly DispatcherTimer _pollTimer;
+    private EmbeddedEngineHost? _embeddedHost;
 
     // Service & Driver Status
     private bool _isServiceRunning;
-    private string _serviceStatusText = "Checking service...";
+    private string _serviceStatusText = "Initializing...";
     private Brush _serviceStatusColor = Brushes.Gray;
     private bool _isDriverConnected;
     private bool _isDevFallback;
@@ -52,7 +56,7 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isTypingActive;
 
     // Troubleshooting
-    private string _troubleshootingLogs = "Connecting to LANType background service...";
+    private string _troubleshootingLogs = "LANType application starting in active user session...\n";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -60,16 +64,20 @@ public class MainViewModel : INotifyPropertyChanged
     {
         _apiClient = new ServiceApiClient();
 
-        // Commands
+        // 1. Start the embedded typing engine inside this application!
+        TryStartEmbeddedEngine();
+
+        // 2. Initialize Commands
         RegeneratePinCommand = new RelayCommand(async () => await RegeneratePinAsync());
+        RegisterDriverCommand = new RelayCommand(() => RegisterKernelDriver());
         StartManualTypingCommand = new RelayCommand(async () => await StartManualTypingAsync(), () => IsServiceRunning && !_isTypingActive);
-        PauseTypingCommand = new RelayCommand(async () => await _apiClient.PauseTypingAsync(), () => IsServiceRunning && _isTypingActive);
-        ResumeTypingCommand = new RelayCommand(async () => await _apiClient.ResumeTypingAsync(), () => IsServiceRunning && _sessionState == SessionState.Paused);
-        StopTypingCommand = new RelayCommand(async () => await _apiClient.StopTypingAsync(), () => IsServiceRunning && _isTypingActive);
-        EmergencyStopCommand = new RelayCommand(async () => await _apiClient.EmergencyStopAsync(), () => IsServiceRunning);
+        PauseTypingCommand = new RelayCommand(() => PauseTyping(), () => IsServiceRunning && _isTypingActive);
+        ResumeTypingCommand = new RelayCommand(() => ResumeTyping(), () => IsServiceRunning && _sessionState == SessionState.Paused);
+        StopTypingCommand = new RelayCommand(() => StopTyping(), () => IsServiceRunning && _isTypingActive);
+        EmergencyStopCommand = new RelayCommand(async () => await EmergencyStopAsync(), () => IsServiceRunning);
         RefreshStatusCommand = new RelayCommand(async () => await RefreshStatusAsync());
 
-        // Polling Timer (1 second interval)
+        // Polling / Heartbeat Timer (1 second interval)
         _pollTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
@@ -78,6 +86,29 @@ public class MainViewModel : INotifyPropertyChanged
         _pollTimer.Start();
 
         _ = RefreshStatusAsync();
+    }
+
+    private void TryStartEmbeddedEngine()
+    {
+        try
+        {
+            _embeddedHost = new EmbeddedEngineHost();
+            _embeddedHost.Start();
+            _embeddedHost.StateChanged += msg => App.Current.Dispatcher.Invoke(() => ApplySessionState(msg));
+            _embeddedHost.PinRegenerated += pin => App.Current.Dispatcher.Invoke(() =>
+            {
+                PairingPin = pin;
+                PairingUri = _embeddedHost.GetPairingUri();
+                QrCodeImage = QrCodeService.GenerateQrCodeImage(PairingUri);
+            });
+
+            TroubleshootingLogs = $"[{DateTime.Now:T}] Embedded typing engine & WebSocket server active on port {ProtocolConstants.DefaultWebSocketPort}.\n" + TroubleshootingLogs;
+        }
+        catch (Exception ex)
+        {
+            TroubleshootingLogs = $"[{DateTime.Now:T}] Embedded engine notice: {ex.Message}. Falling back to external service IPC.\n" + TroubleshootingLogs;
+            _embeddedHost = null;
+        }
     }
 
     #region Properties
@@ -211,13 +242,7 @@ public class MainViewModel : INotifyPropertyChanged
     public int CurrentCpm
     {
         get => _currentCpm;
-        set
-        {
-            if (SetField(ref _currentCpm, value))
-            {
-                CurrentWpm = (int)Math.Round(value / 5.0);
-            }
-        }
+        set => SetField(ref _currentCpm, value);
     }
 
     public int CurrentWpm
@@ -267,6 +292,7 @@ public class MainViewModel : INotifyPropertyChanged
     #region Commands
 
     public RelayCommand RegeneratePinCommand { get; }
+    public RelayCommand RegisterDriverCommand { get; }
     public RelayCommand StartManualTypingCommand { get; }
     public RelayCommand PauseTypingCommand { get; }
     public RelayCommand ResumeTypingCommand { get; }
@@ -278,28 +304,58 @@ public class MainViewModel : INotifyPropertyChanged
 
     public async Task RefreshStatusAsync()
     {
+        // 1. If embedded engine is active, pull state directly from in-process engine
+        if (_embeddedHost != null && _embeddedHost.IsRunning)
+        {
+            IsServiceRunning = true;
+            ServiceStatusText = "Integrated Engine Active (Port " + ProtocolConstants.DefaultWebSocketPort + ")";
+            ServiceStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Green #10B981
+
+            HostIpAddress = _embeddedHost.GetHostIp().ToString();
+            WebSocketPort = ProtocolConstants.DefaultWebSocketPort;
+
+            var pin = _embeddedHost.PairingManager.CurrentPin;
+            if (PairingPin != pin)
+            {
+                PairingPin = pin;
+                PairingUri = _embeddedHost.GetPairingUri();
+                QrCodeImage = QrCodeService.GenerateQrCodeImage(PairingUri);
+            }
+
+            var driverStatus = _embeddedHost.GetDriverStatus();
+            IsDriverConnected = driverStatus.IsDeviceEnumerated;
+            IsDevFallback = driverStatus.IsDevReceiverFallback;
+
+            if (driverStatus.IsDeviceEnumerated)
+            {
+                DriverStatusText = "Genuine KMDF Virtual HID Keyboard Active";
+                DriverStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+            }
+            else
+            {
+                DriverStatusText = "User-Mode Input Active (SendInput Desktop Engine)";
+                DriverStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Green
+            }
+
+            var sessionMsg = _embeddedHost.TypingScheduler.GetCurrentStateMessage();
+            ApplySessionState(sessionMsg);
+            return;
+        }
+
+        // 2. Fallback to external background service IPC if embedded engine is not running
         var status = await _apiClient.GetStatusAsync();
 
         if (status == null)
         {
             IsServiceRunning = false;
-            ServiceStatusText = "Service Stopped or Unreachable";
-            ServiceStatusColor = new SolidColorBrush(Color.FromRgb(239, 68, 68)); // Red #EF4444
-
-            DriverStatusText = "Service Offline";
-            DriverStatusColor = Brushes.Gray;
-            StateBadgeText = "Offline";
-            StateBadgeColor = Brushes.Gray;
-            IsTypingActive = false;
-
-            TroubleshootingLogs = $"[{DateTime.Now:T}] Could not reach background service at http://127.0.0.1:52444. Ensure LANType service is installed and running.\n" + TroubleshootingLogs;
+            ServiceStatusText = "Engine Initializing...";
+            ServiceStatusColor = Brushes.Gray;
             return;
         }
 
-        // Service Online
         IsServiceRunning = true;
         ServiceStatusText = "Service Active (Port " + status.WebSocketPort + ")";
-        ServiceStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Green #10B981
+        ServiceStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129));
 
         HostIpAddress = status.HostIp;
         WebSocketPort = status.WebSocketPort;
@@ -311,33 +367,31 @@ public class MainViewModel : INotifyPropertyChanged
             QrCodeImage = QrCodeService.GenerateQrCodeImage(status.PairingUri);
         }
 
-        // Driver Status
         IsDriverConnected = status.DriverStatus.IsDeviceEnumerated;
         IsDevFallback = status.DriverStatus.IsDevReceiverFallback;
 
         if (status.DriverStatus.IsDeviceEnumerated)
         {
             DriverStatusText = "Genuine KMDF Virtual HID Keyboard Active";
-            DriverStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Green
-        }
-        else if (status.DriverStatus.IsDevReceiverFallback)
-        {
-            DriverStatusText = "Dev Receiver Fallback (Driver Not Attached)";
-            DriverStatusColor = new SolidColorBrush(Color.FromRgb(245, 158, 11)); // Amber #F59E0B
+            DriverStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129));
         }
         else
         {
-            DriverStatusText = "Driver Not Installed";
-            DriverStatusColor = new SolidColorBrush(Color.FromRgb(239, 68, 68)); // Red
+            DriverStatusText = "User-Mode Input Active (SendInput Desktop Engine)";
+            DriverStatusColor = new SolidColorBrush(Color.FromRgb(16, 185, 129));
         }
 
-        // Client & Session
         IsClientConnected = status.IsClientConnected;
-        PairedDeviceName = string.IsNullOrEmpty(status.SessionState.PairedDeviceName) 
-            ? "No phone paired" 
+        PairedDeviceName = string.IsNullOrEmpty(status.SessionState.PairedDeviceName)
+            ? "No phone paired"
             : status.SessionState.PairedDeviceName;
 
-        SessionState = status.SessionState.State;
+        ApplySessionState(status.SessionState);
+    }
+
+    private void ApplySessionState(SessionStateMessage state)
+    {
+        SessionState = state.State;
         IsTypingActive = (SessionState == SessionState.Typing);
 
         switch (SessionState)
@@ -368,26 +422,33 @@ public class MainViewModel : INotifyPropertyChanged
                 break;
         }
 
-        CharactersTyped = status.SessionState.CharactersTyped;
-        TotalCharacters = status.SessionState.TotalCharacters;
-        CharactersRemaining = status.SessionState.CharactersRemaining;
+        CharactersTyped = state.CharactersTyped;
+        TotalCharacters = state.TotalCharacters;
+        CharactersRemaining = state.CharactersRemaining;
 
-        ProgressPercentage = TotalCharacters > 0 
-            ? Math.Round((double)CharactersTyped / TotalCharacters * 100.0, 1) 
+        ProgressPercentage = TotalCharacters > 0
+            ? Math.Round((double)CharactersTyped / TotalCharacters * 100.0, 1)
             : 0;
 
-        CurrentCpm = status.SessionState.CurrentCpm;
-        CurrentWpm = status.SessionState.CurrentWpm;
+        CurrentCpm = state.CurrentCpm;
+        CurrentWpm = state.CurrentWpm;
 
-        var remainingSpan = TimeSpan.FromMilliseconds(status.SessionState.EstimatedRemainingMilliseconds);
+        var remainingSpan = TimeSpan.FromMilliseconds(state.EstimatedRemainingMilliseconds);
         EstimatedRemainingText = $"{remainingSpan.Minutes:D2}:{remainingSpan.Seconds:D2}";
 
-        var elapsedSpan = TimeSpan.FromMilliseconds(status.SessionState.ElapsedMilliseconds);
+        var elapsedSpan = TimeSpan.FromMilliseconds(state.ElapsedMilliseconds);
         ElapsedTimeText = $"{elapsedSpan.Minutes:D2}:{elapsedSpan.Seconds:D2}";
     }
 
     private async Task RegeneratePinAsync()
     {
+        if (_embeddedHost != null)
+        {
+            _embeddedHost.RegeneratePin();
+            await RefreshStatusAsync();
+            return;
+        }
+
         bool ok = await _apiClient.RegeneratePinAsync();
         if (ok)
         {
@@ -395,16 +456,86 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    private void RegisterKernelDriver()
+    {
+        TroubleshootingLogs = $"[{DateTime.Now:T}] Attempting to register kernel driver package...\n" + TroubleshootingLogs;
+        var (success, msg) = EmbeddedEngineHost.RegisterKernelDriver();
+        TroubleshootingLogs = $"[{DateTime.Now:T}] Driver Registration Result: {msg}\n" + TroubleshootingLogs;
+    }
+
     private async Task StartManualTypingAsync()
     {
         if (string.IsNullOrWhiteSpace(ManualTestText)) return;
 
-        // Give the user 3 seconds to focus the target application (e.g. Notepad)
-        TroubleshootingLogs = $"[{DateTime.Now:T}] Manual typing starting in 3 seconds... Please focus your target application!\n" + TroubleshootingLogs;
-        await Task.Delay(3000);
+        string normalized = ManualTestText.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        for (int c = 5; c >= 1; c--)
+        {
+            TroubleshootingLogs = $"[{DateTime.Now:T}] Switch to CodeTantra / Kiosk editor! Starting in {c}s...\n" + TroubleshootingLogs;
+            await Task.Delay(1000);
+        }
+
+        TroubleshootingLogs = $"[{DateTime.Now:T}] Typing started with Hardware OEM Scancodes!\n" + TroubleshootingLogs;
+
+        if (_embeddedHost != null)
+        {
+            var msg = new StartTypingMessage
+            {
+                Text = normalized,
+                SpeedUnit = SpeedUnit.Cpm,
+                SpeedValue = ManualSpeedCpm
+            };
+            _embeddedHost.TypingScheduler.Start(msg, out var err);
+            if (!string.IsNullOrEmpty(err))
+            {
+                TroubleshootingLogs = $"[{DateTime.Now:T}] Manual typing error: {err}\n" + TroubleshootingLogs;
+            }
+            await RefreshStatusAsync();
+            return;
+        }
 
         await _apiClient.StartTypingAsync(ManualTestText, SpeedUnit.Cpm, ManualSpeedCpm);
         await RefreshStatusAsync();
+    }
+
+    private void PauseTyping()
+    {
+        if (_embeddedHost != null)
+        {
+            _embeddedHost.TypingScheduler.Pause(out _);
+            return;
+        }
+        _ = _apiClient.PauseTypingAsync();
+    }
+
+    private void ResumeTyping()
+    {
+        if (_embeddedHost != null)
+        {
+            _embeddedHost.TypingScheduler.Resume(out _);
+            return;
+        }
+        _ = _apiClient.ResumeTypingAsync();
+    }
+
+    private void StopTyping()
+    {
+        if (_embeddedHost != null)
+        {
+            _embeddedHost.TypingScheduler.Stop("User stopped from control panel", out _);
+            return;
+        }
+        _ = _apiClient.StopTypingAsync();
+    }
+
+    private async Task EmergencyStopAsync()
+    {
+        if (_embeddedHost != null)
+        {
+            await _embeddedHost.TypingScheduler.EmergencyStopAsync();
+            return;
+        }
+        await _apiClient.EmergencyStopAsync();
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

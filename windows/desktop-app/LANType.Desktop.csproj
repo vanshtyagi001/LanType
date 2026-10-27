@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\..\shared\protocol\LANType.Protocol.csproj" />
@@ -6,6 +6,22 @@
 
   <ItemGroup>
     <PackageReference Include="QRCoder" Version="1.8.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\background-service\Auth\**\*.cs" Link="Engine\Auth\%(RecursiveDir)%(FileName)%(Extension)" />
+    <Compile Include="..\background-service\Engine\**\*.cs" Link="Engine\Engine\%(RecursiveDir)%(FileName)%(Extension)" />
+    <Compile Include="..\background-service\Keyboard\**\*.cs" Link="Engine\Keyboard\%(RecursiveDir)%(FileName)%(Extension)" />
+    <Compile Include="..\background-service\Network\**\*.cs" Link="Engine\Network\%(RecursiveDir)%(FileName)%(Extension)" />
+    <Compile Include="..\background-service\Server\**\*.cs" Link="Engine\Server\%(RecursiveDir)%(FileName)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\hid-driver\LANTypeVhid.inf" Link="Driver\LANTypeVhid.inf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <PropertyGroup>
@@ -14,6 +30,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\**" />
+  </ItemGroup>
 
 </Project>

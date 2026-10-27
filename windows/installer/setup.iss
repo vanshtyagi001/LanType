@@ -19,8 +19,9 @@ DefaultDirName=C:\Program Files\{#MyAppName}
 DisableDirPage=no
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=.
-OutputBaseFilename=LANType-Setup
+OutputDir=dist
+OutputBaseFilename=LANType-Setup-v1.0.0
+SetupIconFile=app.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -34,9 +35,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 ; Desktop Application
-Source: "..\desktop-app\bin\Release\net9.0-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "publish\Desktop\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 ; Background Service
-Source: "..\background-service\bin\Release\net9.0\*"; DestDir: "{app}\Service"; Flags: ignoreversion recursesubdirs
+Source: "publish\Service\*"; DestDir: "{app}\Service"; Flags: ignoreversion recursesubdirs
 ; Driver Package
 Source: "..\hid-driver\LANTypeVhid.inf"; DestDir: "{app}\Driver"; Flags: ignoreversion
 Source: "..\hid-driver\bin\Release\LANTypeVhid.sys"; DestDir: "{app}\Driver"; Flags: ignoreversion skipifsourcedoesntexist
@@ -52,15 +53,26 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
-[Run]
-; Register Windows Service
-Filename: "{sys}\sc.exe"; Parameters: "create LANTypeService binPath= ""{app}\Service\LANType.Service.exe"" start= auto DisplayName= ""LANType Background Service"" depend= Tcpip"; Flags: runhidden
-Filename: "{sys}\sc.exe"; Parameters: "description LANTypeService ""LANType background typing engine and authenticated WebSocket server."""; Flags: runhidden
-Filename: "{sys}\sc.exe"; Parameters: "start LANTypeService"; Flags: runhidden
-; Run Desktop App after install
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+[Registry]
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "LANTypeService"; Flags: deletevalue uninsdeletevalue
 
-[UninstallRun]
-; Stop and delete service before removing files
+[Run]
+; Stop and delete any legacy Session 0 service to avoid Session 0 Isolation blocking SendInput
 Filename: "{sys}\sc.exe"; Parameters: "stop LANTypeService"; Flags: runhidden
 Filename: "{sys}\sc.exe"; Parameters: "delete LANTypeService"; Flags: runhidden
+
+; Configure Windows Firewall rules
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""LANType WebSocket Port"" dir=in action=allow protocol=TCP localport=52443 profile=any"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""LANType Discovery Port"" dir=in action=allow protocol=UDP localport=52442 profile=any"; Flags: runhidden
+
+; Run Desktop App after install (shellexec required for requireAdministrator manifest)
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec
+
+[UninstallRun]
+; Stop running processes before removing files
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM LANType.Service.exe"; Flags: runhidden
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM LANType.Desktop.exe"; Flags: runhidden
+Filename: "{sys}\sc.exe"; Parameters: "stop LANTypeService"; Flags: runhidden
+Filename: "{sys}\sc.exe"; Parameters: "delete LANTypeService"; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""LANType WebSocket Port"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""LANType Discovery Port"""; Flags: runhidden
