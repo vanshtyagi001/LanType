@@ -64,12 +64,18 @@ public class NetworkInterfaceManager
         return endpoints;
     }
 
+    private IPAddress? _lastLoggedIp;
+
     public IPAddress GetPreferredEndpointAddress()
     {
         var endpoints = GetAvailableEndpoints();
         if (endpoints.Count == 0)
         {
-            _logger.LogWarning("No active network endpoints found, defaulting to loopback 127.0.0.1");
+            if (_lastLoggedIp != IPAddress.Loopback)
+            {
+                _logger.LogWarning("No active network endpoints found, defaulting to loopback 127.0.0.1");
+                _lastLoggedIp = IPAddress.Loopback;
+            }
             return IPAddress.Loopback;
         }
 
@@ -77,13 +83,21 @@ public class NetworkInterfaceManager
         var hotspot = endpoints.FirstOrDefault(e => e.IsLikelyHotspot);
         if (hotspot != null)
         {
-            _logger.LogInformation("Selected hotspot endpoint: {IP} ({Desc})", hotspot.IpAddress, hotspot.Description);
+            if (!hotspot.IpAddress.Equals(_lastLoggedIp))
+            {
+                _logger.LogInformation("Selected hotspot endpoint: {IP} ({Desc})", hotspot.IpAddress, hotspot.Description);
+                _lastLoggedIp = hotspot.IpAddress;
+            }
             return hotspot.IpAddress;
         }
 
         // Otherwise pick the first non-loopback IP (e.g. Wi-Fi)
         var primary = endpoints[0];
-        _logger.LogInformation("Selected primary network endpoint: {IP} ({Desc})", primary.IpAddress, primary.Description);
+        if (!primary.IpAddress.Equals(_lastLoggedIp))
+        {
+            _logger.LogInformation("Selected primary network endpoint: {IP} ({Desc})", primary.IpAddress, primary.Description);
+            _lastLoggedIp = primary.IpAddress;
+        }
         return primary.IpAddress;
     }
 }

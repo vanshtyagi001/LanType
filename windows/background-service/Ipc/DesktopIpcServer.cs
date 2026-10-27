@@ -56,7 +56,6 @@ public class DesktopIpcServer : IDisposable
 
         _listener = new HttpListener();
         _listener.Prefixes.Add($"http://127.0.0.1:{_ipcPort}/");
-        _listener.Prefixes.Add($"http://localhost:{_ipcPort}/");
     }
 
     public void Start()

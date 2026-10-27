@@ -177,6 +177,12 @@ public sealed class VhfDriverKeyboardInterface : IHidKeyboardInterface
         }, cancellationToken);
     }
 
+    public Task<bool> SendUnicodeCharAsync(char c, CancellationToken cancellationToken = default)
+    {
+        // VHF driver operates at raw HID report level and does not consume synthetic Unicode
+        return Task.FromResult(false);
+    }
+
     public DriverStatusMessage GetStatus()
     {
         bool connected = IsConnected || TryOpenDevice();

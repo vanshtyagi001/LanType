@@ -16,6 +16,7 @@ public class Worker : BackgroundService
     private readonly NetworkInterfaceManager _networkManager;
     private readonly IHidKeyboardInterface _keyboard;
     private readonly TypingScheduler _scheduler;
+    private readonly UdpDiscoveryService _discoveryService;
 
     public Worker(
         ILogger<Worker> logger,
@@ -23,7 +24,8 @@ public class Worker : BackgroundService
         DesktopIpcServer ipcServer,
         NetworkInterfaceManager networkManager,
         IHidKeyboardInterface keyboard,
-        TypingScheduler scheduler)
+        TypingScheduler scheduler,
+        UdpDiscoveryService discoveryService)
     {
         _logger = logger;
         _wsServer = wsServer;
@@ -31,6 +33,7 @@ public class Worker : BackgroundService
         _networkManager = networkManager;
         _keyboard = keyboard;
         _scheduler = scheduler;
+        _discoveryService = discoveryService;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -48,6 +51,7 @@ public class Worker : BackgroundService
 
         _wsServer.Start();
         _ipcServer.Start();
+        _discoveryService.Start();
 
         return base.StartAsync(cancellationToken);
     }
@@ -72,6 +76,7 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("LANType Windows Service is stopping. Releasing all keys...");
         await _keyboard.ReleaseAllKeysAsync(CancellationToken.None);
+        _discoveryService.Dispose();
         _wsServer.Stop();
         _ipcServer.Dispose();
 

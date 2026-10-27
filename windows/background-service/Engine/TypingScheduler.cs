@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using LANType.Protocol;
 using LANType.Service.Keyboard;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,12 @@ public sealed class TypingScheduler : IDisposable
     private readonly ILogger<TypingScheduler> _logger;
     private readonly IHidKeyboardInterface _keyboard;
     private readonly object _stateLock = new();
+
+    [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod", SetLastError = true)]
+    private static extern uint TimeBeginPeriod(uint uMilliseconds);
+
+    [DllImport("winmm.dll", EntryPoint = "timeEndPeriod", SetLastError = true)]
+    private static extern uint TimeEndPeriod(uint uMilliseconds);
 
     private CancellationTokenSource? _activeCts;
     private Task? _typingTask;
@@ -89,7 +96,8 @@ public sealed class TypingScheduler : IDisposable
             // Cancel any previously running session
             CancelActiveTask();
 
-            _currentText = message.Text;
+            // Normalize newlines (\r\n -> \n) so code line breaks trigger exactly one Enter keystroke
+            _currentText = message.Text.Replace("\r\n", "\n").Replace('\r', '\n');
             _currentIndex = 0;
 
             if (message.SpeedUnit == SpeedUnit.Wpm)
@@ -221,73 +229,115 @@ public sealed class TypingScheduler : IDisposable
 
     private async Task ExecuteTypingLoopAsync(CancellationToken cancellationToken)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            _ = TimeBeginPeriod(1);
+        }
+
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            int startIndex;
+            string text;
+            int cpm;
+
+            lock (_stateLock)
             {
-                char c;
-                int index;
-                int total;
-                int cpm;
+                startIndex = _currentIndex;
+                text = _currentText;
+                cpm = _currentCpm;
+            }
 
-                lock (_stateLock)
-                {
-                    if (_state != SessionState.Typing || _currentIndex >= _currentText.Length)
-                    {
-                        break;
-                    }
+            // Ideal interval per character in milliseconds
+            double nominalDelayPerCharMs = 60000.0 / Math.Clamp(cpm, ProtocolConstants.MinCpm, ProtocolConstants.MaxCpm);
 
-                    c = _currentText[_currentIndex];
-                    index = _currentIndex;
-                    total = _currentText.Length;
-                    cpm = _currentCpm;
-                }
+            // High-resolution session base timestamp for real-time jitter pacing
+            long loopStartTicks = Stopwatch.GetTimestamp();
+            var notifyStopwatch = Stopwatch.StartNew();
 
-                int nominalDelayMs = CalculateDelayMs(cpm);
-                // Key-down duration is clamped between 15ms and min(50ms, 40% of nominal delay)
-                int keyDownDurationMs = Math.Clamp((int)(nominalDelayMs * 0.35), 15, 60);
-                int keyUpDurationMs = Math.Max(5, nominalDelayMs - keyDownDurationMs);
+            for (int i = startIndex; i < text.Length; i++)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
 
+                char c = text[i];
                 var mapping = USKeyboardLayoutMapper.MapCharacter(c);
+
+                // Closed-loop target pacing:
+                // Target cumulative elapsed time for completing character 'i' relative to loop start
+                int charsProcessed = (i - startIndex + 1);
+                double targetElapsedMs = charsProcessed * nominalDelayPerCharMs;
+
+                // Current actual elapsed time
+                double actualElapsedMs = (double)(Stopwatch.GetTimestamp() - loopStartTicks) * 1000.0 / Stopwatch.Frequency;
+                double budgetMs = targetElapsedMs - actualElapsedMs;
+
+                // Jitter Compensation:
+                // If system jitter or scheduling delays cause actualElapsedMs to lag behind targetElapsedMs,
+                // budgetMs drops. We dynamically compress hold and inter-key delay down to hardware minimums
+                // to immediately accelerate and catch up with real-time!
+                int keyDownMs;
+                double keyUpMs;
+
+                if (budgetMs <= 15.0)
+                {
+                    // Jitter / lag detected: increase typing speed to catch up!
+                    keyDownMs = 12; // Minimum safe physical latch duration for HID and Windows message queues
+                    keyUpMs = Math.Max(0.5, budgetMs - keyDownMs);
+                }
+                else
+                {
+                    // Ahead or on schedule: natural human-like keystroke pacing
+                    keyDownMs = Math.Clamp((int)(budgetMs * 0.35), 15, 50);
+                    keyUpMs = Math.Max(3.0, budgetMs - keyDownMs);
+                }
 
                 if (mapping.IsSupported)
                 {
-                    // 1. Send Key-Down Report with Modifiers + KeyCode
+                    // 1. Send Key-Down Report
                     var keyDownReport = HidKeyboardReport.SingleKey(mapping.Modifiers, mapping.KeyCode);
                     await _keyboard.SendReportAsync(keyDownReport, cancellationToken);
 
-                    // Wait key-down hold duration using high precision delay
-                    await DelayPreciseAsync(keyDownDurationMs, cancellationToken);
+                    // Key hold duration
+                    await DelayPreciseAsync(keyDownMs, cancellationToken);
 
                     // 2. Send Key-Up Report (Release Key)
                     await _keyboard.ReleaseAllKeysAsync(cancellationToken);
 
-                    // Wait remaining inter-key delay
-                    await DelayPreciseAsync(keyUpDurationMs, cancellationToken);
+                    // Remaining inter-key rest (compressed dynamically when lagging)
+                    if (keyUpMs > 0.5)
+                    {
+                        await DelayPreciseAsync(keyUpMs, cancellationToken);
+                    }
                 }
                 else
                 {
-                    _logger.LogWarning("Skipping unsupported character at index {Index}: {Reason}", 
-                        index, mapping.UnsupportedReason);
-                    await DelayPreciseAsync(nominalDelayMs, cancellationToken);
+                    // Fallback for non-ASCII / Unicode characters (smart quotes, em-dashes, non-Latin, etc.)
+                    await _keyboard.SendUnicodeCharAsync(c, cancellationToken);
+                    await DelayPreciseAsync(keyDownMs, cancellationToken);
+                    await _keyboard.ReleaseAllKeysAsync(cancellationToken);
+
+                    if (keyUpMs > 0.5)
+                    {
+                        await DelayPreciseAsync(keyUpMs, cancellationToken);
+                    }
                 }
 
                 lock (_stateLock)
                 {
-                    _currentIndex++;
-                    if (_currentIndex >= _currentText.Length)
+                    _currentIndex = i + 1;
+                    if (_currentIndex >= text.Length)
                     {
                         _state = SessionState.Completed;
                         _sessionStopwatch.Stop();
-                        _logger.LogInformation("Typing session completed successfully ({Total} chars)", _currentText.Length);
+                        _logger.LogInformation("Typing session completed successfully ({Total} chars)", text.Length);
                         NotifyStateChanged();
                         break;
                     }
 
-                    // Periodically notify progress every 5 characters or at least once per second
-                    if (_currentIndex % 5 == 0 || nominalDelayMs >= 200)
+                    // High-frequency real-time update: at least 20 FPS (every 50ms) or every 3 characters
+                    if (notifyStopwatch.ElapsedMilliseconds >= 50 || _currentIndex % 3 == 0)
                     {
                         NotifyStateChanged();
+                        notifyStopwatch.Restart();
                     }
                 }
             }
@@ -307,24 +357,33 @@ public sealed class TypingScheduler : IDisposable
         }
         finally
         {
-            // Safety guarantee: Release any held keys
+            if (OperatingSystem.IsWindows())
+            {
+                _ = TimeEndPeriod(1);
+            }
             await _keyboard.ReleaseAllKeysAsync();
             NotifyStateChanged();
         }
     }
 
-    private static async Task DelayPreciseAsync(int milliseconds, CancellationToken cancellationToken)
+    private static async Task DelayPreciseAsync(double milliseconds, CancellationToken cancellationToken)
     {
-        if (milliseconds <= 0) return;
+        if (milliseconds <= 0.5) return;
 
-        // For delays over 15ms, use Task.Delay to yield CPU
-        if (milliseconds > 15)
+        long startTicks = Stopwatch.GetTimestamp();
+        long targetTicks = startTicks + (long)(milliseconds * Stopwatch.Frequency / 1000.0);
+
+        // If delay is significant (> 12ms), yield CPU for the bulk of it using Task.Delay
+        if (milliseconds > 12.0)
         {
-            await Task.Delay(milliseconds - 5, cancellationToken);
+            int taskDelayMs = (int)(milliseconds - 4.0);
+            if (taskDelayMs > 0)
+            {
+                await Task.Delay(taskDelayMs, cancellationToken);
+            }
         }
 
-        // Spin wait for the remaining fine milliseconds with high-resolution Stopwatch
-        long targetTicks = Stopwatch.GetTimestamp() + (milliseconds * Stopwatch.Frequency / 1000);
+        // Sub-millisecond spin wait for exact precision
         while (Stopwatch.GetTimestamp() < targetTicks)
         {
             if (cancellationToken.IsCancellationRequested)

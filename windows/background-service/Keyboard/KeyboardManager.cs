@@ -44,6 +44,11 @@ public class KeyboardManager : IHidKeyboardInterface
         return await _devReceiver.SendReportAsync(report, cancellationToken);
     }
 
+    public async Task<bool> SendUnicodeCharAsync(char c, CancellationToken cancellationToken = default)
+    {
+        return await _devReceiver.SendUnicodeCharAsync(c, cancellationToken);
+    }
+
     public async Task<bool> ReleaseAllKeysAsync(CancellationToken cancellationToken = default)
     {
         bool driverOk = true;

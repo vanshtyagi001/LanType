@@ -41,6 +41,7 @@ builder.Services.AddSingleton<IHidKeyboardInterface>(sp => sp.GetRequiredService
 builder.Services.AddSingleton<TypingScheduler>();
 builder.Services.AddSingleton<LANWebSocketServer>();
 builder.Services.AddSingleton<DesktopIpcServer>();
+builder.Services.AddSingleton<UdpDiscoveryService>();
 
 builder.Services.AddHostedService<Worker>();
 
