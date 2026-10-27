@@ -8,6 +8,7 @@ import com.lantype.app.data.network.ConnectionStatus
 
 data class MainUiState(
     val connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
+    val isPaired: Boolean = false,
     val sessionState: SessionStateMessage = SessionStateMessage(),
     val driverStatus: DriverStatusMessage = DriverStatusMessage(),
     val text: String = "",
@@ -19,7 +20,9 @@ data class MainUiState(
     val hostInput: String = "192.168.137.1",
     val portInput: String = "52443",
     val pinInput: String = "",
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val discoveredDevice: com.lantype.app.data.model.DiscoveredDevice? = null,
+    val isScanningDevices: Boolean = false
 ) {
     val characterCount: Int
         get() = text.length
@@ -29,7 +32,8 @@ data class MainUiState(
 
     val isConnectedAndReady: Boolean
         get() = connectionStatus == ConnectionStatus.Connected && 
-                (sessionState.state == SessionState.Ready || sessionState.state == SessionState.Paused || sessionState.state == SessionState.Completed || sessionState.state == SessionState.Stopped)
+                isPaired && 
+                sessionState.state != SessionState.Typing
 
     val isTyping: Boolean
         get() = sessionState.state == SessionState.Typing

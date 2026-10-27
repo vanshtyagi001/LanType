@@ -136,6 +136,14 @@ data class ErrorMessage(
     val detail: String? = null
 )
 
+@Serializable
+data class DiscoveredDevice(
+    val hostName: String,
+    val ip: String,
+    val port: Int = 52443,
+    val isAvailable: Boolean = true
+)
+
 object ProtocolJson {
     val json = Json {
         ignoreUnknownKeys = true

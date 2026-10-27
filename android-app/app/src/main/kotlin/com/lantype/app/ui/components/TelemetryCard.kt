@@ -1,7 +1,11 @@
 package com.lantype.app.ui.components
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,17 +24,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lantype.app.ui.theme.AmberWarning
-import com.lantype.app.ui.theme.BluePrimary
-import com.lantype.app.ui.theme.CyanAccent
-import com.lantype.app.ui.theme.PurpleAccent
-import com.lantype.app.ui.theme.Slate400
-import com.lantype.app.ui.theme.Slate800
-import com.lantype.app.ui.theme.Slate900
+import com.lantype.app.ui.theme.AccentWhite
+import com.lantype.app.ui.theme.BlackBg
+import com.lantype.app.ui.theme.BorderColor
+import com.lantype.app.ui.theme.SurfaceDark
+import com.lantype.app.ui.theme.SurfaceElevated
+import com.lantype.app.ui.theme.TextMuted
+import com.lantype.app.ui.theme.TextPrimary
+import com.lantype.app.ui.theme.TextSecondary
 import com.lantype.app.ui.viewmodel.MainUiState
 
 @Composable
@@ -40,13 +44,15 @@ fun TelemetryCard(
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = uiState.progressPercent,
-        label = "ProgressAnimation"
+        animationSpec = tween(durationMillis = 50, easing = LinearEasing),
+        label = "Progress"
     )
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Slate800)
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, BorderColor),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Header
@@ -56,78 +62,75 @@ fun TelemetryCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Live Typing Telemetry",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Session Progress",
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = "${(animatedProgress * 100).toInt()}%",
-                    color = CyanAccent,
-                    fontSize = 15.sp,
+                    color = TextPrimary,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Progress Bar
+            // Minimal Progress Line
             LinearProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(5.dp)),
-                color = BluePrimary,
-                trackColor = Slate900
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = AccentWhite,
+                trackColor = SurfaceElevated
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Progress Count
+            // Counter Line
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${uiState.sessionState.charactersTyped} of ${uiState.sessionState.totalCharacters} chars",
-                    color = Slate400,
-                    fontSize = 12.sp
+                    text = "${uiState.sessionState.charactersTyped} of ${uiState.sessionState.totalCharacters} chars typed",
+                    color = TextSecondary,
+                    fontSize = 11.sp
                 )
                 Text(
                     text = "${uiState.sessionState.charactersRemaining} remaining",
-                    color = Slate400,
-                    fontSize = 12.sp
+                    color = TextSecondary,
+                    fontSize = 11.sp
                 )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Metrics Grid
+            // Metrics Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                MetricBox(
+                MetricItem(
                     label = "SPEED",
                     value = "${uiState.sessionState.currentCpm} CPM",
-                    color = CyanAccent,
                     modifier = Modifier.weight(1f)
                 )
 
-                MetricBox(
+                MetricItem(
                     label = "WORDS",
                     value = "${uiState.sessionState.currentWpm} WPM",
-                    color = PurpleAccent,
                     modifier = Modifier.weight(1f)
                 )
 
                 val remainingSeconds = uiState.sessionState.estimatedRemainingMilliseconds / 1000
                 val timeRemainingStr = String.format("%02d:%02d", remainingSeconds / 60, remainingSeconds % 60)
-                MetricBox(
+                MetricItem(
                     label = "REMAINING",
                     value = timeRemainingStr,
-                    color = AmberWarning,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -136,23 +139,22 @@ fun TelemetryCard(
 }
 
 @Composable
-private fun MetricBox(
+private fun MetricItem(
     label: String,
     value: String,
-    color: Color,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Slate900)
-            .padding(vertical = 10.dp, horizontal = 8.dp),
-        contentAlignment = Alignment.Center
+            .clip(RoundedCornerShape(6.dp))
+            .background(BlackBg)
+            .border(1.dp, BorderColor, RoundedCornerShape(6.dp))
+            .padding(vertical = 8.dp, horizontal = 10.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = label, color = Slate400, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Column {
+            Text(text = label, color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(text = value, color = color, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(text = value, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -12,12 +12,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import com.lantype.app.data.network.ConnectionStatus
+import com.lantype.app.data.network.DeviceDiscoveryManager
 import kotlinx.coroutines.launch
 
 class MainViewModel @JvmOverloads constructor(
     application: Application,
     private val repository: LANTypeRepository = LANTypeRepository(),
-    private val settingsRepository: SettingsRepository = SettingsRepository(application)
+    private val settingsRepository: SettingsRepository = SettingsRepository(application),
+    private val discoveryManager: DeviceDiscoveryManager = DeviceDiscoveryManager(application)
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -41,18 +44,51 @@ class MainViewModel @JvmOverloads constructor(
                     speedValue = savedSpeed
                 )
             }
+            if (savedPin.isNotBlank()) {
+                repository.setPendingPin(savedPin)
+            }
+        }
+
+        // Collect discovery states
+        viewModelScope.launch {
+            discoveryManager.discoveredDevice.collect { device ->
+                if (device != null) {
+                    _uiState.update {
+                        it.copy(
+                            discoveredDevice = device,
+                            hostInput = device.ip,
+                            portInput = device.port.toString()
+                        )
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            discoveryManager.isScanning.collect { scanning ->
+                _uiState.update { it.copy(isScanningDevices = scanning) }
+            }
         }
 
         // Collect repository states
         viewModelScope.launch {
             repository.connectionStatus.collect { status ->
                 _uiState.update { it.copy(connectionStatus = status) }
+                if (status == ConnectionStatus.Connected) {
+                    discoveryManager.stopDiscovery()
+                }
             }
         }
 
         viewModelScope.launch {
             repository.sessionState.collect { state ->
                 _uiState.update { it.copy(sessionState = state) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.isPaired.collect { paired ->
+                _uiState.update { it.copy(isPaired = paired) }
             }
         }
 
@@ -69,6 +105,9 @@ class MainViewModel @JvmOverloads constructor(
                 }
             }
         }
+
+        // Start initial auto-discovery immediately in background
+        discoveryManager.startDiscovery()
     }
 
     fun onTextChanged(newText: String) {
@@ -105,6 +144,14 @@ class MainViewModel @JvmOverloads constructor(
 
     fun showPairingDialog(show: Boolean) {
         _uiState.update { it.copy(isPairingDialogVisible = show) }
+        if (show) {
+            discoveryManager.startDiscovery()
+        }
+    }
+
+    fun rescanDevices() {
+        discoveryManager.stopDiscovery()
+        discoveryManager.startDiscovery()
     }
 
     fun showHelpDialog(show: Boolean) {
@@ -125,6 +172,10 @@ class MainViewModel @JvmOverloads constructor(
 
     fun onPinInputChanged(pin: String) {
         _uiState.update { it.copy(pinInput = pin) }
+        repository.setPendingPin(pin)
+        if (pin.length == 6 && _uiState.value.connectionStatus == ConnectionStatus.Connected && !_uiState.value.isPaired) {
+            connectAndPair(pin = pin)
+        }
     }
 
     fun clearError() {
@@ -180,6 +231,10 @@ class MainViewModel @JvmOverloads constructor(
         repository.disconnect()
     }
 
+    fun reconnect() {
+        repository.reconnect()
+    }
+
     fun startTyping() {
         val text = _uiState.value.text
         if (text.isEmpty()) {
@@ -207,5 +262,10 @@ class MainViewModel @JvmOverloads constructor(
 
     fun emergencyStop() {
         repository.emergencyStop()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        discoveryManager.stopDiscovery()
     }
 }

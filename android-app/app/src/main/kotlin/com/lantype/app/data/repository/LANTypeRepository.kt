@@ -42,6 +42,9 @@ class LANTypeRepository(
     private val _pairResponse = MutableStateFlow<PairResponseMessage?>(null)
     val pairResponse: StateFlow<PairResponseMessage?> = _pairResponse.asStateFlow()
 
+    private val _isPaired = MutableStateFlow(false)
+    val isPaired: StateFlow<Boolean> = _isPaired.asStateFlow()
+
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
@@ -58,26 +61,43 @@ class LANTypeRepository(
         scope.launch {
             webSocketClient.connectionStatus.collect { status ->
                 if (status == ConnectionStatus.Connected) {
-                    // Send pair request if pending PIN is set
-                    pendingPin?.let { pin ->
+                    val pin = pendingPin
+                    if (!pin.isNullOrBlank() && pin.length >= 4 && !_isPaired.value) {
                         sendPairRequest(pin)
                     }
-                } else if (status == ConnectionStatus.Disconnected || status == ConnectionStatus.Error) {
+                } else if (status == ConnectionStatus.Disconnected) {
+                    _isPaired.value = false
                     _sessionState.value = _sessionState.value.copy(state = SessionState.Disconnected)
                 }
             }
         }
     }
 
+    fun setPendingPin(pin: String) {
+        pendingPin = pin
+        if (webSocketClient.connectionStatus.value == ConnectionStatus.Connected && !_isPaired.value && pin.length >= 4) {
+            sendPairRequest(pin)
+        }
+    }
+
     fun connectAndPair(host: String, port: Int, pin: String) {
         pendingPin = pin
         _lastError.value = null
-        webSocketClient.connect(host, port)
+        if (webSocketClient.connectionStatus.value == ConnectionStatus.Connected) {
+            sendPairRequest(pin)
+        } else {
+            webSocketClient.connect(host, port)
+        }
+    }
+
+    fun reconnect() {
+        webSocketClient.reconnect()
     }
 
     fun disconnect() {
         pendingPin = null
         sessionToken = null
+        _isPaired.value = false
         webSocketClient.disconnect()
         _sessionState.value = SessionStateMessage()
     }
@@ -143,9 +163,11 @@ class LANTypeRepository(
                     _pairResponse.value = resp
                     if (resp.success && resp.sessionToken != null) {
                         sessionToken = resp.sessionToken
+                        _isPaired.value = true
                         _sessionState.value = _sessionState.value.copy(state = SessionState.Ready)
                         Log.i(tag, "Pairing successful. Session token received.")
                     } else {
+                        _isPaired.value = false
                         _lastError.value = resp.errorMessage ?: "Pairing failed."
                         Log.w(tag, "Pairing failed: ${resp.errorMessage}")
                     }

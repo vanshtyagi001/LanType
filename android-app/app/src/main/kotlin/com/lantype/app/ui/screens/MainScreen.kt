@@ -1,20 +1,21 @@
 package com.lantype.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
-import com.lantype.app.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -43,20 +45,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lantype.app.R
 import com.lantype.app.data.network.ConnectionStatus
 import com.lantype.app.ui.components.SpeedControls
 import com.lantype.app.ui.components.StatusCard
 import com.lantype.app.ui.components.TelemetryCard
 import com.lantype.app.ui.components.TextEditorSection
-import com.lantype.app.ui.theme.BluePrimary
-import com.lantype.app.ui.theme.CyanAccent
-import com.lantype.app.ui.theme.RedDanger
-import com.lantype.app.ui.theme.Slate700
-import com.lantype.app.ui.theme.Slate900
+import com.lantype.app.ui.theme.AccentWhite
+import com.lantype.app.ui.theme.BlackBg
+import com.lantype.app.ui.theme.BorderColor
+import com.lantype.app.ui.theme.DangerRed
+import com.lantype.app.ui.theme.SurfaceDark
+import com.lantype.app.ui.theme.SurfaceElevated
+import com.lantype.app.ui.theme.TextMuted
+import com.lantype.app.ui.theme.TextPrimary
+import com.lantype.app.ui.theme.TextSecondary
 import com.lantype.app.ui.viewmodel.MainUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,7 +94,9 @@ fun MainScreen(
     onDismissPairingDialog: () -> Unit,
     onDismissHelpDialog: () -> Unit,
     onQrScanned: (String) -> Boolean,
-    onClearError: () -> Unit
+    onClearError: () -> Unit,
+    onRescanDevices: () -> Unit = {},
+    onReconnectClicked: () -> Unit = {}
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -95,6 +108,7 @@ fun MainScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
@@ -103,15 +117,16 @@ fun MainScreen(
                             painter = painterResource(id = R.drawable.logo),
                             contentDescription = "Logo",
                             modifier = Modifier
-                                .size(28.dp)
+                                .size(26.dp)
                                 .clip(RoundedCornerShape(6.dp))
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "LANType",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                            color = TextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.3).sp
                         )
                     }
                 },
@@ -120,18 +135,19 @@ fun MainScreen(
                         Icon(
                             imageVector = Icons.Default.HelpOutline,
                             contentDescription = "Help",
-                            tint = CyanAccent
+                            tint = TextSecondary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Slate900
+                    containerColor = BlackBg
                 )
             )
         },
         bottomBar = {
             BottomActionBar(
                 uiState = uiState,
+                onPairClicked = onPairClicked,
                 onStartTyping = onStartTyping,
                 onPauseTyping = onPauseTyping,
                 onResumeTyping = onResumeTyping,
@@ -140,7 +156,7 @@ fun MainScreen(
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = Slate900
+        containerColor = BlackBg
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -152,25 +168,55 @@ fun MainScreen(
         ) {
             Spacer(modifier = Modifier.height(2.dp))
 
-            // Connection Loss Warning Banner
-            if (uiState.connectionStatus == ConnectionStatus.Error) {
+            // Connection Error Warning Banner
+            // Connection Warning / Auto-Reconnect Banner
+            if (uiState.connectionStatus == ConnectionStatus.Error || uiState.connectionStatus == ConnectionStatus.Reconnecting) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = RedDanger.copy(alpha = 0.2f))
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, DangerRed.copy(alpha = 0.4f)),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceDark)
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(imageVector = Icons.Default.Warning, contentDescription = "Warning", tint = RedDanger)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Connection lost. Text and typing progress are preserved. Reconnect to resume seamlessly.",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Warning",
+                                tint = DangerRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (uiState.connectionStatus == ConnectionStatus.Reconnecting)
+                                    "Reconnecting to PC automatically..."
+                                else
+                                    "Connection lost. Tap to reconnect.",
+                                color = DangerRed,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Button(
+                            onClick = onReconnectClicked,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = SurfaceElevated,
+                                contentColor = AccentWhite
+                            ),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Reconnect", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
@@ -182,7 +228,7 @@ fun MainScreen(
                 onDisconnectClicked = onDisconnectClicked
             )
 
-            // Live Telemetry Card (Shown when connected / active)
+            // Live Telemetry Card (Shown when typing / paused / characters typed)
             if (uiState.isTyping || uiState.isPaused || uiState.sessionState.charactersTyped > 0) {
                 TelemetryCard(uiState = uiState)
             }
@@ -214,7 +260,8 @@ fun MainScreen(
                 onPinChanged = onPinChanged,
                 onConnectClicked = onConnectDialogClicked,
                 onDismiss = onDismissPairingDialog,
-                onQrScanned = onQrScanned
+                onQrScanned = onQrScanned,
+                onRescan = onRescanDevices
             )
         }
 
@@ -227,6 +274,7 @@ fun MainScreen(
 @Composable
 private fun BottomActionBar(
     uiState: MainUiState,
+    onPairClicked: () -> Unit,
     onStartTyping: () -> Unit,
     onPauseTyping: () -> Unit,
     onResumeTyping: () -> Unit,
@@ -236,7 +284,16 @@ private fun BottomActionBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Slate900)
+            .background(SurfaceDark)
+            .drawBehind {
+                drawLine(
+                    color = BorderColor,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+            .navigationBarsPadding() // Ensures action bar is never overlapped by system 3-button or gesture bar
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         when {
@@ -246,34 +303,46 @@ private fun BottomActionBar(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
+                    OutlinedButton(
                         onClick = onPauseTyping,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Slate700)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, BorderColor),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SurfaceElevated,
+                            contentColor = TextPrimary
+                        )
                     ) {
-                        Icon(imageVector = Icons.Default.Pause, contentDescription = "Pause", modifier = Modifier.size(18.dp))
+                        Icon(imageVector = Icons.Default.Pause, contentDescription = "Pause", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Pause", fontWeight = FontWeight.Bold)
+                        Text("Pause", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
 
-                    Button(
+                    OutlinedButton(
                         onClick = onStopTyping,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = RedDanger)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, BorderColor),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SurfaceElevated,
+                            contentColor = TextPrimary
+                        )
                     ) {
-                        Icon(imageVector = Icons.Default.Stop, contentDescription = "Stop", modifier = Modifier.size(18.dp))
+                        Icon(imageVector = Icons.Default.Stop, contentDescription = "Stop", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Stop", fontWeight = FontWeight.Bold)
+                        Text("Stop", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     Button(
                         onClick = onEmergencyStop,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = RedDanger)
+                        modifier = Modifier.height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DangerRed,
+                            contentColor = AccentWhite
+                        )
                     ) {
-                        Text("🚨 Kill", fontWeight = FontWeight.Bold)
+                        Text("Kill", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -286,49 +355,76 @@ private fun BottomActionBar(
                 ) {
                     Button(
                         onClick = onResumeTyping,
-                        modifier = Modifier.weight(1.5f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BluePrimary)
+                        modifier = Modifier.weight(1.5f).height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentWhite,
+                            contentColor = BlackBg
+                        )
                     ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Resume", modifier = Modifier.size(20.dp))
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Resume", modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Resume Typing", fontWeight = FontWeight.Bold)
+                        Text("Resume Typing", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    Button(
+                    OutlinedButton(
                         onClick = onStopTyping,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Slate700)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, BorderColor),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SurfaceElevated,
+                            contentColor = TextPrimary
+                        )
                     ) {
-                        Text("Stop", fontWeight = FontWeight.Bold)
+                        Text("Stop", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
             else -> {
-                // Idle / Ready: Start Typing Button
-                val canStart = uiState.isConnectedAndReady && uiState.characterCount > 0
+                // Idle / Ready: High-contrast professional start button
+                val isConnected = uiState.connectionStatus == ConnectionStatus.Connected
+                val isPaired = uiState.isPaired
+                val hasText = uiState.characterCount > 0
+
+                val buttonText = when {
+                    !isConnected -> "Connect to Laptop"
+                    !isPaired -> "Enter 6-Digit PIN to Pair"
+                    !hasText -> "Enter Text to Start Typing"
+                    else -> "Start Typing into Laptop"
+                }
+
+                // Enabled if user needs to connect/pair, OR if ready to type with entered text
+                val canClick = !isConnected || !isPaired || hasText
+
                 Button(
-                    onClick = onStartTyping,
+                    onClick = {
+                        if (!isConnected || !isPaired) {
+                            onPairClicked()
+                        } else {
+                            onStartTyping()
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
-                    enabled = canStart,
-                    shape = RoundedCornerShape(12.dp),
+                        .height(48.dp),
+                    enabled = canClick,
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = BluePrimary,
-                        disabledContainerColor = Slate700
+                        containerColor = AccentWhite,
+                        contentColor = BlackBg,
+                        disabledContainerColor = SurfaceElevated,
+                        disabledContentColor = TextMuted
                     )
                 ) {
-                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Start", modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow, 
+                        contentDescription = "Start", 
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    val buttonText = when {
-                        uiState.connectionStatus != ConnectionStatus.Connected -> "Connect & Pair to Start"
-                        uiState.characterCount == 0 -> "Enter Text to Start Typing"
-                        else -> "Start Typing into Laptop"
-                    }
-                    Text(text = buttonText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(text = buttonText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

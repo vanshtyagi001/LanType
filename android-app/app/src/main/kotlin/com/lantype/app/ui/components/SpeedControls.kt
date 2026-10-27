@@ -1,6 +1,8 @@
 package com.lantype.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,12 +28,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lantype.app.data.model.SpeedUnit
-import com.lantype.app.ui.theme.BluePrimary
-import com.lantype.app.ui.theme.CyanAccent
-import com.lantype.app.ui.theme.Slate400
-import com.lantype.app.ui.theme.Slate700
-import com.lantype.app.ui.theme.Slate800
-import com.lantype.app.ui.theme.Slate900
+import com.lantype.app.ui.theme.AccentWhite
+import com.lantype.app.ui.theme.BlackBg
+import com.lantype.app.ui.theme.BorderColor
+import com.lantype.app.ui.theme.SurfaceDark
+import com.lantype.app.ui.theme.SurfaceElevated
+import com.lantype.app.ui.theme.TextMuted
+import com.lantype.app.ui.theme.TextPrimary
+import com.lantype.app.ui.theme.TextSecondary
 import com.lantype.app.ui.viewmodel.MainUiState
 
 @Composable
@@ -43,28 +47,30 @@ fun SpeedControls(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Slate800)
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, BorderColor),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDark)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header: Unit Selector Toggle
+            // Header: Title & Unit Selector Toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Typing Speed Control",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Speed Settings",
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
                 // CPM / WPM Segmented Switch
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Slate900)
+                        .clip(RoundedCornerShape(6.dp))
+                        .border(1.dp, BorderColor, RoundedCornerShape(6.dp))
+                        .background(BlackBg)
                         .padding(2.dp)
                 ) {
                     UnitToggleChip(
@@ -91,8 +97,8 @@ fun SpeedControls(
                 Column {
                     Text(
                         text = "${uiState.speedValue} ${uiState.speedUnit.name}",
-                        color = CyanAccent,
-                        fontSize = 24.sp,
+                        color = TextPrimary,
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
                     val msPerChar = when (uiState.speedUnit) {
@@ -100,8 +106,8 @@ fun SpeedControls(
                         SpeedUnit.Wpm -> 60000 / (uiState.speedValue * 5).coerceAtLeast(1)
                     }
                     Text(
-                        text = "≈ $msPerChar ms per character",
-                        color = Slate400,
+                        text = "≈ $msPerChar ms / character",
+                        color = TextMuted,
                         fontSize = 11.sp
                     )
                 }
@@ -110,8 +116,8 @@ fun SpeedControls(
                 val estMinutes = estDuration / 60
                 val estSeconds = estDuration % 60
                 Text(
-                    text = "Est. Total: ${String.format("%02d:%02d", estMinutes, estSeconds)}",
-                    color = Slate400,
+                    text = "Est. duration: ${String.format("%02d:%02d", estMinutes, estSeconds)}",
+                    color = TextSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -130,11 +136,13 @@ fun SpeedControls(
                 onValueChange = { onSpeedChanged(it.toInt()) },
                 valueRange = minVal..maxVal,
                 colors = SliderDefaults.colors(
-                    thumbColor = BluePrimary,
-                    activeTrackColor = BluePrimary,
-                    inactiveTrackColor = Slate900
+                    thumbColor = AccentWhite,
+                    activeTrackColor = AccentWhite,
+                    inactiveTrackColor = SurfaceElevated
                 )
             )
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Quick Preset Chips
             Row(
@@ -167,17 +175,17 @@ private fun UnitToggleChip(
 ) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (isSelected) BluePrimary else Color.Transparent)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (isSelected) AccentWhite else Color.Transparent)
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .padding(horizontal = 10.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = title,
-            color = if (isSelected) Color.White else Slate400,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
+            color = if (isSelected) BlackBg else TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
         )
     }
 }
@@ -191,15 +199,16 @@ private fun PresetChip(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) Slate700 else Slate900)
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, if (isSelected) AccentWhite else BorderColor, RoundedCornerShape(6.dp))
+            .background(if (isSelected) SurfaceElevated else BlackBg)
             .clickable { onClick() }
             .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            color = if (isSelected) CyanAccent else Slate400,
+            color = if (isSelected) TextPrimary else TextSecondary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
         )

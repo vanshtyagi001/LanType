@@ -45,7 +45,9 @@ class MainActivity : ComponentActivity() {
                     onDismissPairingDialog = { viewModel.showPairingDialog(false) },
                     onDismissHelpDialog = { viewModel.showHelpDialog(false) },
                     onQrScanned = viewModel::handleScannedQrCode,
-                    onClearError = viewModel::clearError
+                    onClearError = viewModel::clearError,
+                    onRescanDevices = viewModel::rescanDevices,
+                    onReconnectClicked = viewModel::reconnect
                 )
             }
         }

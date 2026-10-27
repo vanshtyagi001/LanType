@@ -26,6 +26,7 @@ enum class ConnectionStatus {
     Disconnected,
     Connecting,
     Connected,
+    Reconnecting,
     Error
 }
 
@@ -33,13 +34,15 @@ class LANWebSocketClient {
     private val tag = "LANWebSocketClient"
 
     private val client = OkHttpClient.Builder()
-        .pingInterval(10, TimeUnit.SECONDS)
-        .connectTimeout(5, TimeUnit.SECONDS)
+        .pingInterval(25, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS) // Indefinite read for WebSocket
+        .retryOnConnectionFailure(true)
         .build()
 
     private var webSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + Job())
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.Disconnected)
@@ -50,13 +53,26 @@ class LANWebSocketClient {
 
     private var currentHost: String? = null
     private var currentPort: Int = 52443
+    private var isUserDisconnected = false
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 15
 
     fun connect(host: String, port: Int) {
-        disconnect()
-
+        isUserDisconnected = false
+        reconnectAttempts = 0
+        reconnectJob?.cancel()
         currentHost = host
         currentPort = port
+
         _connectionStatus.value = ConnectionStatus.Connecting
+        executeConnect(host, port)
+    }
+
+    private fun executeConnect(host: String, port: Int) {
+        stopHeartbeat()
+        try {
+            webSocket?.close(1000, "Resetting connection")
+        } catch (_: Exception) {}
 
         val url = "ws://$host:$port/ws"
         Log.d(tag, "Connecting to WebSocket at $url")
@@ -68,6 +84,7 @@ class LANWebSocketClient {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(tag, "WebSocket connection opened to $url")
+                reconnectAttempts = 0
                 _connectionStatus.value = ConnectionStatus.Connected
                 startHeartbeat()
             }
@@ -86,15 +103,60 @@ class LANWebSocketClient {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(tag, "WebSocket closed: $code / $reason")
                 stopHeartbeat()
-                _connectionStatus.value = ConnectionStatus.Disconnected
+
+                if (!isUserDisconnected && code != 1000) {
+                    scheduleReconnect()
+                } else {
+                    _connectionStatus.value = ConnectionStatus.Disconnected
+                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(tag, "WebSocket failure: ${t.message}", t)
                 stopHeartbeat()
-                _connectionStatus.value = ConnectionStatus.Error
+
+                if (!isUserDisconnected) {
+                    scheduleReconnect()
+                } else {
+                    _connectionStatus.value = ConnectionStatus.Error
+                }
             }
         })
+    }
+
+    private fun scheduleReconnect() {
+        if (isUserDisconnected) return
+
+        val host = currentHost ?: return
+        val port = currentPort
+
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            Log.w(tag, "Max reconnect attempts reached ($maxReconnectAttempts). Setting state to Error.")
+            _connectionStatus.value = ConnectionStatus.Error
+            return
+        }
+
+        reconnectAttempts++
+        _connectionStatus.value = ConnectionStatus.Reconnecting
+
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            val backoffMs = (1000L * reconnectAttempts).coerceAtMost(5000L)
+            Log.i(tag, "Attempting auto-reconnect #$reconnectAttempts in ${backoffMs}ms...")
+            delay(backoffMs)
+
+            if (!isUserDisconnected && isActive) {
+                executeConnect(host, port)
+            }
+        }
+    }
+
+    fun reconnect() {
+        val host = currentHost ?: return
+        reconnectAttempts = 0
+        isUserDisconnected = false
+        _connectionStatus.value = ConnectionStatus.Reconnecting
+        executeConnect(host, currentPort)
     }
 
     fun sendMessage(json: String): Boolean {
@@ -111,7 +173,7 @@ class LANWebSocketClient {
         heartbeatJob = scope.launch {
             var seq = 0L
             while (isActive && _connectionStatus.value == ConnectionStatus.Connected) {
-                delay(15000)
+                delay(12000)
                 val ping = HeartbeatMessage(sequence = seq++)
                 val json = ProtocolJson.json.encodeToString(HeartbeatMessage.serializer(), ping)
                 sendMessage(json)
@@ -125,11 +187,13 @@ class LANWebSocketClient {
     }
 
     fun disconnect() {
+        isUserDisconnected = true
+        reconnectJob?.cancel()
+        reconnectJob = null
         stopHeartbeat()
         try {
             webSocket?.close(1000, "User disconnected")
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
         webSocket = null
         _connectionStatus.value = ConnectionStatus.Disconnected
     }

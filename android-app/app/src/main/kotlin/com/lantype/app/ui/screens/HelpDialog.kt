@@ -1,5 +1,6 @@
 package com.lantype.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,15 +24,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.lantype.app.ui.theme.BluePrimary
-import com.lantype.app.ui.theme.CyanAccent
-import com.lantype.app.ui.theme.Slate400
-import com.lantype.app.ui.theme.Slate800
+import com.lantype.app.ui.theme.AccentWhite
+import com.lantype.app.ui.theme.BlackBg
+import com.lantype.app.ui.theme.BorderColor
+import com.lantype.app.ui.theme.SurfaceDark
+import com.lantype.app.ui.theme.TextPrimary
+import com.lantype.app.ui.theme.TextSecondary
 
 @Composable
 fun HelpDialog(
@@ -40,8 +42,9 @@ fun HelpDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Slate800)
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, BorderColor),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(
                 modifier = Modifier
@@ -55,13 +58,13 @@ fun HelpDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "How to Use LANType",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "User Guide",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Slate400)
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
                     }
                 }
 
@@ -69,38 +72,41 @@ fun HelpDialog(
 
                 HelpSection(
                     title = "1. Connect to Windows Hotspot",
-                    content = "Enable Mobile Hotspot in Windows Settings. Connect your Android phone to the laptop hotspot Wi-Fi network."
+                    content = "Turn on Mobile Hotspot in Windows Settings. Connect your Android phone to that Wi-Fi hotspot."
                 )
 
                 HelpSection(
                     title = "2. Pair Your Phone",
-                    content = "Open LANType on your laptop. Click 'Pair Laptop' in this app, then scan the QR code displayed on the laptop or enter the 6-digit PIN manually."
+                    content = "Open LANType on your laptop. Tap 'Pair Laptop', then scan the QR code displayed on screen or enter the 6-digit PIN manually."
                 )
 
                 HelpSection(
-                    title = "3. Enter Text & Set Speed",
-                    content = "Paste or enter the text you want to type. Set your desired speed in CPM (characters per minute) or WPM (words per minute)."
+                    title = "3. Enter Text & Configure Speed",
+                    content = "Paste or type the text you want to transfer. Adjust your desired typing rate in CPM (characters per minute) or WPM."
                 )
 
                 HelpSection(
                     title = "4. Focus Target App & Start",
-                    content = "Click inside Notepad, Word, a browser text field, or a kiosk window on your laptop. Then tap 'Start Typing'. The text streams directly through the Windows Virtual HID Keyboard driver."
+                    content = "Focus Notepad, Word, a browser input, or terminal on your laptop, then tap 'Start Typing into Laptop'. Text streams directly through the Virtual HID Keyboard driver."
                 )
 
                 HelpSection(
                     title = "5. Safety Controls",
-                    content = "You can Pause, Resume, or Stop at any time. The Emergency Killswitch immediately halts typing and releases all keyboard modifiers."
+                    content = "You can Pause, Resume, or Stop at any time. The Emergency Killswitch immediately halts typing and clears all modifier keystrokes."
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BluePrimary)
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentWhite,
+                        contentColor = BlackBg
+                    )
                 ) {
-                    Text("Got it", fontWeight = FontWeight.Bold)
+                    Text("Got it", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -110,8 +116,8 @@ fun HelpDialog(
 @Composable
 private fun HelpSection(title: String, content: String) {
     Column(modifier = Modifier.padding(bottom = 12.dp)) {
-        Text(text = title, color = CyanAccent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(text = title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         Spacer(modifier = Modifier.height(2.dp))
-        Text(text = content, color = Slate400, fontSize = 12.sp, lineHeight = 16.sp)
+        Text(text = content, color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
